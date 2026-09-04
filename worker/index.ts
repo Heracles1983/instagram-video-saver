@@ -1,6 +1,10 @@
 /** Cloudflare Worker entry point for the vinext application. */
 import handler from "vinext/server/app-router-entry";
 
+interface Env {
+  ASSETS: Fetcher;
+}
+
 interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
   passThroughOnException(): void;
@@ -9,7 +13,7 @@ interface ExecutionContext {
 const worker = {
   async fetch(
     request: Request,
-    env: Record<string, unknown>,
+    env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
     return handler.fetch(request, env, ctx);
