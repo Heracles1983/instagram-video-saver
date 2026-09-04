@@ -7,9 +7,6 @@
   "assets": {
     "binding": "ASSETS"
   },
-  "images": {
-    "binding": "IMAGES"
-  },
   "observability": {
     "enabled": true
   }
