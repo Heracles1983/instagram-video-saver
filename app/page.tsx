@@ -31,6 +31,7 @@ export default function Home() {
   const [result, setResult] = useState<Result | null>(null);
   const [selected, setSelected] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const video = useMemo(
     () => result?.videos.find((item) => item.index === selected) ?? result?.videos[0] ?? null,
@@ -76,6 +77,62 @@ export default function Home() {
       setMessage(error instanceof Error ? error.message : "暂时无法解析这个链接");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveVideo() {
+    if (!video || saving) return;
+
+    const standalone = window.matchMedia("(display-mode: standalone)").matches
+      || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+    // Normal Safari/desktop browsers handle the download attribute well, so
+    // keep the fast path without first buffering the whole video in memory.
+    if (!standalone) {
+      const link = document.createElement("a");
+      link.href = video.downloadPath;
+      link.download = video.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      return;
+    }
+
+    // iOS Home Screen web apps can ignore <a download>. Fetch the MP4 through
+    // our same-origin proxy and hand it to the native share sheet instead.
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch(video.downloadPath, { cache: "no-store" });
+      if (!response.ok) {
+        const reason = await response.text().catch(() => "");
+        throw new Error(reason || "视频准备失败，请重新解析后再试");
+      }
+
+      const blob = await response.blob();
+      const file = new File([blob], video.filename, {
+        type: blob.type || "video/mp4",
+        lastModified: Date.now(),
+      });
+
+      const shareData: ShareData = { files: [file], title: video.filename };
+      if (typeof navigator.share === "function"
+        && typeof navigator.canShare === "function"
+        && navigator.canShare(shareData)) {
+        await navigator.share(shareData);
+        setMessage("已打开系统分享菜单，可选择“存储到文件”或其他保存方式");
+        return;
+      }
+
+      // Last-resort fallback for older/limited standalone browsers: navigate
+      // to a local blob URL so iOS can show its native media viewer/share UI.
+      const objectUrl = URL.createObjectURL(file);
+      window.location.assign(objectUrl);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setMessage(error instanceof Error ? error.message : "保存失败，请在 Safari 中打开后重试");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -192,8 +249,9 @@ export default function Home() {
                       {video.width && video.height && <span className="text-xs">{video.width} × {video.height}</span>}
                     </div>
                     {result.caption && <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/55">{result.caption}</p>}
-                    <Button asChild size="lg" className="mt-4 h-13 w-full rounded-2xl bg-white text-base font-semibold text-black hover:bg-white/90">
-                      <a href={video.downloadPath} download={video.filename}><Download />下载到手机</a>
+                    <Button type="button" size="lg" disabled={saving} onClick={saveVideo}
+                      className="mt-4 h-13 w-full rounded-2xl bg-white text-base font-semibold text-black hover:bg-white/90 disabled:opacity-50">
+                      {saving ? <><LoaderCircle className="animate-spin" />正在准备视频…</> : <><Download />下载到手机</>}
                     </Button>
                     <Button type="button" variant="ghost" onClick={clear}
                       className="mt-2 h-11 w-full rounded-xl text-white/45 hover:bg-white/5 hover:text-white">
@@ -212,7 +270,7 @@ export default function Home() {
                 {[
                   ["01", "复制链接", "在 Instagram 视频的分享菜单中复制链接。"],
                   ["02", "粘贴并解析", "粘贴到左侧，通常几秒内就能识别。"],
-                  ["03", "保存 MP4", "点下载后，在 iPhone 上保存到“文件”。"],
+                  ["03", "保存 MP4", "Safari 直接下载；主屏幕模式会打开系统分享菜单，可选“存储到文件”。"],
                 ].map(([n, title, copy]) => (
                   <li key={n} className="flex gap-4">
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-white/45">{n}</span>
