@@ -32,6 +32,11 @@ function isStandaloneWebApp() {
     || (navigator as IOSNavigator).standalone === true;
 }
 
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [accepted, setAccepted] = useState(false);
@@ -39,6 +44,7 @@ export default function Home() {
   const [selected, setSelected] = useState(0);
   const [loading, setLoading] = useState(false);
   const [standalone, setStandalone] = useState(false);
+  const [ios, setIOS] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const video = useMemo(
@@ -48,10 +54,13 @@ export default function Home() {
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(display-mode: standalone)");
-    const updateStandalone = () => setStandalone(isStandaloneWebApp());
-    updateStandalone();
-    mediaQuery.addEventListener?.("change", updateStandalone);
-    return () => mediaQuery.removeEventListener?.("change", updateStandalone);
+    const updateDeviceMode = () => {
+      setStandalone(isStandaloneWebApp());
+      setIOS(isIOSDevice());
+    };
+    updateDeviceMode();
+    mediaQuery.addEventListener?.("change", updateDeviceMode);
+    return () => mediaQuery.removeEventListener?.("change", updateDeviceMode);
   }, []);
 
   function clear() {
@@ -96,7 +105,7 @@ export default function Home() {
     }
   }
 
-  async function downloadInStandalone() {
+  async function saveVideoOnIOS() {
     if (!video || downloadLoading) return;
     setDownloadLoading(true);
     setMessage(null);
@@ -107,9 +116,12 @@ export default function Home() {
         throw new Error(detail || "视频准备失败，请重新解析后再试");
       }
 
-      const blob = await response.blob();
-      const file = new File([blob], video.filename, {
-        type: blob.type || "video/mp4",
+      const sourceBlob = await response.blob();
+      const mp4Blob = sourceBlob.type === "video/mp4"
+        ? sourceBlob
+        : new Blob([sourceBlob], { type: "video/mp4" });
+      const file = new File([mp4Blob], video.filename, {
+        type: "video/mp4",
         lastModified: Date.now(),
       });
       const shareData: ShareData = { files: [file] };
@@ -124,7 +136,7 @@ export default function Home() {
         return;
       }
 
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(mp4Blob);
       const viewer = window.open(blobUrl, "_blank");
       if (!viewer) window.location.assign(blobUrl);
       window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
@@ -249,11 +261,14 @@ export default function Home() {
                       {video.width && video.height && <span className="text-xs">{video.width} × {video.height}</span>}
                     </div>
                     {result.caption && <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/55">{result.caption}</p>}
-                    {standalone ? (
-                      <Button type="button" size="lg" disabled={downloadLoading} onClick={downloadInStandalone}
-                        className="mt-4 h-13 w-full rounded-2xl bg-white text-base font-semibold text-black hover:bg-white/90 disabled:opacity-60">
-                        {downloadLoading ? <><LoaderCircle className="animate-spin" />正在准备视频…</> : <><Download />下载到手机</>}
-                      </Button>
+                    {standalone || ios ? (
+                      <>
+                        <Button type="button" size="lg" disabled={downloadLoading} onClick={saveVideoOnIOS}
+                          className="mt-4 h-13 w-full rounded-2xl bg-white text-base font-semibold text-black hover:bg-white/90 disabled:opacity-60">
+                          {downloadLoading ? <><LoaderCircle className="animate-spin" />正在准备视频…</> : <><Download />保存到相册</>}
+                        </Button>
+                        <p className="mt-2 text-center text-xs leading-5 text-white/35">iPhone / iPad 会打开系统菜单，选择“存储视频”即可直接进入照片。</p>
+                      </>
                     ) : (
                       <Button asChild size="lg" className="mt-4 h-13 w-full rounded-2xl bg-white text-base font-semibold text-black hover:bg-white/90">
                         <a href={video.downloadPath} download={video.filename}><Download />下载到手机</a>
@@ -276,7 +291,7 @@ export default function Home() {
                 {[
                   ["01", "复制链接", "在 Instagram 视频的分享菜单中复制链接。"],
                   ["02", "粘贴并解析", "粘贴到左侧，通常几秒内就能识别。"],
-                  ["03", "保存 MP4", "Safari 会直接下载；主屏幕模式会打开系统分享菜单，可选择“存储到文件”。"],
+                  ["03", "保存视频", "iPhone / iPad 点“保存到相册”，再在系统菜单选择“存储视频”；其他浏览器保持直接下载。"],
                 ].map(([n, title, copy]) => (
                   <li key={n} className="flex gap-4">
                     <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-white/45">{n}</span>
