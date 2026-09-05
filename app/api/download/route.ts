@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const headers = new Headers({
       "Cache-Control": "private, no-store",
       "Content-Disposition": `attachment; filename="${video.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"`,
-      "Content-Type": upstream.headers.get("content-type") || "video/mp4",
+      "Content-Type": "video/mp4",
       "X-Content-Type-Options": "nosniff",
     });
     for (const name of ["content-length", "content-range", "accept-ranges"]) {
