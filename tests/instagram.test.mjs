@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const js=ts.transpileModule(fs.readFileSync(new URL('../lib/instagram.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
+const {parseInstagramInput,isAllowedMediaUrl,extractInstagramPage}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+test('accepts copied captions and strips tracking',async()=>{assert.deepEqual(await parseInstagramInput('看看 https://www.instagram.com/reel/Chunk8-jurw/?igsh=123'),{shortcode:'Chunk8-jurw',canonicalUrl:'https://www.instagram.com/p/Chunk8-jurw/'});});
+test('rejects lookalike hosts, credentials and non-media pages',async()=>{for(const url of ['https://instagram.com.evil.com/p/abc/','https://user:secret@instagram.com/p/abc/','https://www.instagram.com:444/p/abc/','http://www.instagram.com/p/abc/','https://www.instagram.com/username/'])await assert.rejects(parseInstagramInput(url));});
+test('media allowlist excludes arbitrary URLs',()=>{for(const url of ['https://localhost/a.mp4','https://cdninstagram.com.evil.com/a.mp4','http://a.cdninstagram.com/a.mp4'])assert.equal(isAllowedMediaUrl(url),false);assert.equal(isAllowedMediaUrl('https://scontent.cdninstagram.com/a.mp4'),true);});
+test('selects the requested post, ignoring recommended videos; preserves carousel indexes',()=>{const html='<script type="application/json">'+JSON.stringify({data:[{code:'other',video_url:'https://a.cdninstagram.com/wrong.mp4'},{code:'Chunk8-jurw',carousel_media:[{display_url:'https://a.cdninstagram.com/image.jpg'},{video_versions:[{url:'https://a.cdninstagram.com/low.mp4',width:320,height:480},{url:'https://a.cdninstagram.com/high.mp4',width:1080,height:1920}]}]}]})+'</script>';const result=extractInstagramPage(html,'Chunk8-jurw');assert.equal(result.videos.length,1);assert.equal(result.videos[0].index,1);assert.equal(result.videos[0].width,1080);assert.match(result.videos[0].url,/high.mp4/);assert.equal(extractInstagramPage(html,'missing'),null);});

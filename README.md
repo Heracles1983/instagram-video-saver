@@ -1,69 +1,39 @@
-# INS 视频保存器
+# INS Pocket 2.0
 
-一个面向公开 Instagram 内容的开源视频保存工具。粘贴 Reel、视频帖子或轮播帖子链接，即可预览并下载其中的 MP4 视频。
+Instagram 视频保存 PWA，新版源码独立保存在 `ins-pocket-v2` 分支，原 `main` 保留。
 
-## 功能
+在线入口：https://ins-pocket.heracles1983.chatgpt.site
 
-- 支持公开 Reels、视频帖子及轮播中的多个视频
-- 自动展开 Instagram 分享链接
-- 视频预览、分辨率提示与 MP4 下载
-- 不要求 Instagram 账号或密码
-- 不建立下载记录或视频库
-- 对输入地址与上游媒体地址做域名校验
+## 使用
 
-## 使用限制
+在 Safari 打开在线入口 → 分享 → 添加到主屏幕。粘贴公开 Reel、视频帖或轮播链接，解析后点“准备视频”，再次点击打开系统文件分享菜单。在支持的 iPhone 上选择“存储视频”，也可存储到文件。
 
-- 仅支持公开内容，不支持私密账号、限时动态和直播
-- Instagram 的接口或页面结构变更后，解析逻辑可能需要更新
-- 请只下载本人创作、已获授权或允许保存的内容，并遵守适用法律与平台条款
-- 本项目与 Instagram 或 Meta Platforms, Inc. 无隶属或合作关系
+不收集 Instagram 账号或密码。最近 8 条成功解析链接仅存于浏览器，可清空。视频不写入 Service Worker 缓存；断网显示离线页，解析和下载仍需网络。
 
-## 技术栈
+## 重要限制
 
-- React 19 + TypeScript
-- [vinext](https://github.com/cloudflare/vinext)
-- Cloudflare Workers / Vite
-- Tailwind CSS + shadcn/ui
+GitHub 保存源码；实际解析与下载 API 运行在 Sites 的 Cloudflare Worker。GitHub Pages 不能运行后端，本仓库 `pages/` 是新版在线入口跳转页。新站默认为所有者私有访问，首次可能需要 ChatGPT 登录。
 
-## 本地运行
+上游 Instagram 的匿名访问、接口结构或限流会影响解析；公开视频也不保证成功。不支持私密内容、登录墙或已删除的帖子。外部媒体 URL 会过期，应重新解析。服务健康检查成功仅说明本站 API 正常，不代表 Instagram 可用。
 
-需要 Node.js `>=22.13.0`，以及提供 `bash`、GNU `timeout` 和 `flock` 的 Linux 环境。
+已通过 TypeScript、4 项解析/安全测试及生产构建。首次验证的 Instagram 样例在开发网络中未提供视频数据，实际下载与 iPhone 相册保存尚需用可访问的真实链接确认。
+
+## 开发与验证
+
+Node >=22.13，pnpm 11.25。
 
 ```bash
-npm ci
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
+node --test tests/instagram.test.mjs
+pnpm exec tsc --noEmit
+pnpm build
 ```
 
-默认开发服务由 Vite/Vinext 启动。生产构建：
+`GET /api/health` 检查服务；`POST /api/resolve` 接收 `{ "url": "Instagram 链接" }`；`GET /api/media` 仅代理 Instagram/Meta CDN 的视频，支持 Range，不会再次解析帖子。
 
-```bash
-npm run build
-npm run start
-```
+## 发布
 
-运行测试：
+Sites 源码与部署由 Sites 工作流管理；向 GitHub 推送不会自动更新 Sites。修改后需要另行发布 Sites。`pages/` 可用于 GitHub Pages 的入口；不应把全栈源码作为静态站上传后期待 API 运行。
 
-```bash
-npm test
-```
-
-## 部署说明
-
-该项目包含 `/api/resolve` 与 `/api/download` 两个服务端路由，需要部署到支持 Cloudflare Workers/Vinext 的全栈运行环境。GitHub Pages 只能托管静态文件，无法单独运行本项目的解析和下载后端。
-
-部署环境还必须允许服务端访问 Instagram 的公开页面与媒体 CDN。某些托管服务的网络策略、地区限制或反自动化措施可能导致解析失败。
-
-## 项目结构
-
-```text
-app/
-  api/resolve/       解析公开 Instagram 链接
-  api/download/      校验并代理视频下载
-  page.tsx           前端界面
-lib/instagram.ts     URL 校验与媒体解析逻辑
-worker/              Cloudflare Worker 入口
-```
-
-## 开源许可
-
-[MIT License](LICENSE) © 2026 Heracles1983
+仅保存本人创作或已获得授权的内容。本项目与 Instagram/Meta 无隶属关系。

@@ -1,32 +1,9 @@
-import { InstagramResolveError, resolveInstagramInput } from "@/lib/instagram";
-
-const headers = { "Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8" };
-
+import { resolveInstagramInput, InstagramResolveError } from "@/lib/instagram";
 export async function POST(request: Request) {
-  try {
-    if (Number(request.headers.get("content-length") ?? 0) > 8192) {
-      return Response.json({ error: "链接内容过长" }, { status: 413, headers });
-    }
-    const body = await request.json() as { url?: unknown };
-    if (typeof body.url !== "string") throw new InstagramResolveError("invalid_url", "请先粘贴 Instagram 视频链接");
-    const result = await resolveInstagramInput(body.url);
-    return Response.json({
-      ...result,
-      videos: result.videos.map((video) => ({
-        index: video.index,
-        videoUrl: video.url,
-        thumbnailUrl: video.thumbnailUrl,
-        width: video.width,
-        height: video.height,
-        filename: video.filename,
-        downloadPath: `/api/download?code=${encodeURIComponent(result.shortcode)}&index=${video.index}`,
-      })),
-    }, { headers });
-  } catch (error) {
-    const known = error instanceof InstagramResolveError;
-    return Response.json({
-      error: known ? error.message : "解析暂时失败，请稍后再试",
-      code: known ? error.code : "resolve_failed",
-    }, { status: known ? error.status : 500, headers });
-  }
+ try {
+  if(Number(request.headers.get("content-length")??0)>4096) return Response.json({error:"链接太长"},{status:413});
+  const text=await request.text(); if(text.length>4096) return Response.json({error:"链接太长"},{status:413});
+  const body=JSON.parse(text);
+  return Response.json(await resolveInstagramInput(typeof body.url==="string"?body.url:""),{headers:{"Cache-Control":"no-store"}});
+ } catch(e) {return Response.json({error:e instanceof InstagramResolveError?e.message:"解析服务暂时不可用，请稍后重试。"},{status:e instanceof InstagramResolveError?e.status:502,headers:{"Cache-Control":"no-store"}});}
 }

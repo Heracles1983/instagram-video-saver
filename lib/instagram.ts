@@ -1,7 +1,7 @@
 const IG_HOSTS = new Set(["instagram.com", "www.instagram.com", "m.instagram.com", "instagr.am", "www.instagr.am"]);
 const MEDIA_PATHS = new Set(["p", "reel", "reels", "tv"]);
 const CODE = /^[A-Za-z0-9_-]{3,32}$/;
-const timeout = 15_000;
+const timeout = 10_000;
 
 const browserHeaders = {
   Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -238,7 +238,7 @@ function findContainer(root: unknown, shortcode: string) {
     if (Array.isArray(current)) { queue.push(...current.slice(0, 500)); continue; }
     if (!record(current)) continue;
     const found = videos(current, shortcode);
-    if (found.length) return { videos: found, ...details(current) };
+    if (found.length && (current.code === shortcode || current.shortcode === shortcode || String(current.pk ?? current.id ?? "").split("_")[0] === shortcodeId(shortcode))) return { videos: found, ...details(current) };
     Object.values(current).forEach((value) => {
       if (value && typeof value === "object") queue.push(value);
     });
@@ -272,6 +272,32 @@ function contextJson(html: string) {
   } catch { return null; }
 }
 
+export function extractInstagramPage(html: string, shortcode: string) {
+  for (const script of html.matchAll(/<script\b[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { const found = findContainer(JSON.parse(script[1]), shortcode); if (found) return found; } catch {}
+  }
+  const context = contextJson(html);
+  return context ? findContainer(context, shortcode) : null;
+}
+async function graphqlMedia(shortcode: string) {
+  try {
+    const response = await timedFetch(`https://www.instagram.com/p/${shortcode}/`, {headers: browserHeaders});
+    const html = await response.text();
+    const structured = extractInstagramPage(html, shortcode);
+    if (structured) return structured;
+    const lsd = html.match(/"LSD",\[\],\{"token":"([^"}]+)"/)?.[1];
+    if (!lsd) return null;
+    const name = "PolarisLoggedOutDesktopWWWPostRootContentQuery";
+    const result = await timedFetch("https://www.instagram.com/api/graphql", {
+      method: "POST", headers: {...browserHeaders, "Content-Type": "application/x-www-form-urlencoded", "X-FB-LSD": lsd, "X-IG-App-ID": "936619743392459", "X-FB-Friendly-Name": name},
+      body: new URLSearchParams({lsd, fb_api_caller_class:"RelayModern", fb_api_req_friendly_name:name, server_timestamps:"true", variables:JSON.stringify({media_id:shortcodeId(shortcode)}), doc_id:"27130156389949648"})
+    });
+    if (!result.ok || !result.headers.get("content-type")?.includes("json")) return null;
+    const data = await result.json();
+    return findContainer(data, shortcode);
+  } catch { return null; }
+}
+
 async function embedMedia(shortcode: string) {
   for (const url of [
     `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
@@ -281,9 +307,8 @@ async function embedMedia(shortcode: string) {
       const response = await timedFetch(url, { headers: browserHeaders, redirect: "follow" });
       if (!response.ok) continue;
       const html = await response.text();
-      const context = contextJson(html);
-      const found = context && findContainer(context, shortcode);
-      if (found) return found;
+      const structured = extractInstagramPage(html, shortcode);
+      if (structured) return structured;
       const urlValue = meta(html, "og:video:secure_url") ?? meta(html, "og:video");
       if (allowedMedia(urlValue)) {
         const image = meta(html, "og:image");
@@ -300,7 +325,7 @@ async function embedMedia(shortcode: string) {
 
 export async function resolveInstagramShortcode(shortcode: string): Promise<InstagramResult> {
   if (!CODE.test(shortcode)) throw new InstagramResolveError("invalid_shortcode", "这个 Instagram 链接格式不正确");
-  const resolved = await mobileMedia(shortcode) ?? await embedMedia(shortcode);
+  const resolved = await graphqlMedia(shortcode) ?? await mobileMedia(shortcode) ?? await embedMedia(shortcode);
   if (!resolved?.videos.length) {
     throw new InstagramResolveError("unavailable", "没有找到可下载的视频。它可能是私密、已删除、仅限登录查看，或 Instagram 暂时限制了解析。", 422);
   }
@@ -323,3 +348,4 @@ export const downloadHeaders = {
   Referer: "https://www.instagram.com/",
   "User-Agent": browserHeaders["User-Agent"],
 };
+
